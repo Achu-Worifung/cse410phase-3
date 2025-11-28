@@ -3,6 +3,7 @@ import psycopg2 as pg
 import bcrypt
 import jwt 
 from datetime import datetime, timedelta
+from pydantic import BaseModel
 
 app = FastAPI()
 
@@ -15,7 +16,12 @@ JWT_SECRET = "my secret jwt key"
 JWT_ALGORITHM = "HS256"
 
 salt = bcrypt.gensalt()
-
+class userSignup(BaseModel):
+    name: str
+    phone: str
+    addr: str | None = None
+    username: str
+    password: str
 def get_db_connection():
     conn = pg.connect(
         dbname=DB_NAME,
@@ -57,20 +63,20 @@ async def get_car_details(car_id: int):
     conn.close()
     return row
 #insert customer 
-@app.post('api/customer/{name}/{phone}/{addr}/{username}/{password}')
-async def insert_customer(name: str, phone: str, addr: str, username: str, password: str):
+@app.post('api/customer/')
+async def insert_customer(user: userSignup):
     conn = get_db_connection()
     cur = conn.cursor()
     query = """
     INSERT INTO CUSTOMER ("NAME", "PHONE", "ADDR", "USERNAME", "PASSWORD")
     VALUES (%s, %s, %s, %s, %s);
     """
-    params = (name, phone, addr, username, bcrypt.hashpw(password.encode('utf-8'), salt))
+    params = (user.name, user.phone, user.addr, user.username, bcrypt.hashpw(user.password.encode('utf-8'), salt))
     cur.execute(query, params)
     conn.commit()
     conn.close()
     payload = {
-        "username": username,
+        "username": user.username,
         "exp": datetime.utcnow() + timedelta(hours=72)
     }
     encode_token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)

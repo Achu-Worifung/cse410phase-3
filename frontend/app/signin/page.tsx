@@ -62,8 +62,11 @@ export default function App() {
         <Button color="primary" type="submit" disabled={loading}>
           { loading ? "Submitting..." : "Submit" }
         </Button>
-        <Button type="reset" variant="flat" disabled={loading}>
-          Reset
+        <Button  variant="flat" disabled={loading} onClick={(e) =>{
+          e.preventDefault();
+          window.location.href = "/signup";
+        }}>
+          Sign Up
         </Button>
       </div>
       {action && (
