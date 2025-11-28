@@ -4,8 +4,18 @@ import bcrypt
 import jwt 
 from datetime import datetime, timedelta
 from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
+# run script: fastapi dev main.py
+#aconfigure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 DB_NAME = "cse412" #change to your database name
 DB_USER = "postgres"
@@ -35,20 +45,20 @@ def get_db_connection():
 async def read_root():
     return {"message": "Hello World"}
 
-@app.get('/api/cars')
-async def get_cars():
-    conn = get_db_connection()
-    cur = conn.cursor()
-    query = """
-    SELECT "CAR_ID", "CAR NAME" AS NAME, "IMAGE", "PRICE($)" AS PRICE, "MILEAGE"
-    FROM CAR
-    WHERE "IS_AVAIL" = TRUE
-    LIMIT 250;
-    """
-    cur.execute(query)
-    rows = cur.fetchall()
-    conn.close()
-    return rows
+# @app.get('/api/cars')
+# async def get_cars():
+#     conn = get_db_connection()
+#     cur = conn.cursor()
+#     query = """
+#     SELECT "CAR_ID", "CAR NAME" AS NAME, "IMAGE", "PRICE($)" AS PRICE, "MILEAGE"
+#     FROM CAR
+#     WHERE "IS_AVAIL" = TRUE
+#     LIMIT 250;
+#     """
+#     cur.execute(query)
+#     rows = cur.fetchall()
+#     conn.close()
+#     return rows
 
 @app.get('/api/car/{car_id}')
 async def get_car_details(car_id: int):
@@ -103,41 +113,80 @@ async def get_customer(username: str, password: str):
     else:
         return {"message": "Invalid username or password"}
 #filtering route for car listings
-@app.get('/api/cars/{limit}/{offset}/{query}/{make}/{model}/{year}/{min_price}/{max_price}/{sort}')
-async def filter_cars(limit: int, offset: int, query: str, make: str, model: str, year: int, min_price: int, max_price: int, sort: str):
+@app.get("/api/cars")
+async def filter_cars(
+    limit: int = 20,
+    offset: int = 0,
+    query: str | None = None,
+    make: str | None = None,
+    model: str | None = None,
+    year: int | None = None,
+    min_price: int | None = None,
+    max_price: int | None = None,
+    sort: str | None = None
+):
     conn = get_db_connection()
     cur = conn.cursor()
-    query = f"""
-    SELECT * FROM CAR WHERE 1 = 1
+
+    sql = """
+        SELECT 
+            "CAR_ID", 
+            "CAR NAME" AS name, 
+            "IMAGE", 
+            "PRICE($)" AS price, 
+            "MILEAGE"
+        FROM CAR
+        WHERE 1 = 1
     """
+
     params = []
+
+    if query:
+        sql += ' AND "CAR NAME" ILIKE %s'
+        params.append(f"%{query}%")
+
     if make:
-        query += """ AND "MAKE" = %s"""
+        sql += ' AND "MAKE" = %s'
         params.append(make)
+
     if model:
-        query += """ AND "MODEL" = %s"""
+        sql += ' AND "MODEL" = %s'
         params.append(model)
+
     if year:
-        query += """ AND "YEAR" = %s"""
+        sql += ' AND "YEAR" = %s'
         params.append(year)
+
     if min_price:
-        query += """ AND "PRICE($)" >= %s"""
+        sql += ' AND "PRICE($)" >= %s'
         params.append(min_price)
+
     if max_price:
-        query += """ AND "PRICE($)" <= %s"""
+        sql += ' AND "PRICE($)" <= %s'
         params.append(max_price)
-    if sort:
-        query += f" ORDER BY {sort}"
-        params.append(sort)
-    if limit:
-        query += " LIMIT %s"
-        params.append(limit)
-    if offset:
-        query += " OFFSET %s"
-        params.append(offset)
-    
-    cur.execute(query, params)
+
+    # SAFE SORTING (prevent SQL injection)
+    allowed_sorts = {
+        "price_asc": ' "PRICE($)" ASC ',
+        "price_desc": ' "PRICE($)" DESC ',
+        "year_asc": ' "YEAR" ASC ',
+        "year_desc": ' "YEAR" DESC ',
+        "mileage_asc": ' "MILEAGE" ASC ',
+        "mileage_desc": ' "MILEAGE" DESC ',
+    }
+
+    if sort in allowed_sorts:
+        sql += f" ORDER BY {allowed_sorts[sort]}"
+    else:
+        sql += ' ORDER BY "CAR_ID" ASC '
+
+    # Pagination
+    sql += " LIMIT %s OFFSET %s"
+    params.append(limit)
+    params.append(offset)
+
+    cur.execute(sql, params)
     rows = cur.fetchall()
     conn.close()
-    print(f'here are the rows: {rows}')
+
     return rows

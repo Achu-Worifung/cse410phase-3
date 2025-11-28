@@ -85,10 +85,9 @@ export const Navbar = () => {
         <NavbarItem className="hidden lg:flex">{searchInput}</NavbarItem>
         <NavbarItem className="hidden md:flex">
           <Button
-            isExternal
             as={Link}
             className="text-sm font-normal text-default-600 bg-default-100"
-            href={"/login"}
+            href={"/signin"}
             startContent={<HeartFilledIcon className="text-danger" />}
             variant="flat"
           >
