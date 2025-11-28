@@ -1,3 +1,6 @@
+"use client";
+
+import React from "react";
 import {
   Navbar as HeroUINavbar,
   NavbarContent,
@@ -25,8 +28,11 @@ import {
   SearchIcon,
   Logo,
 } from "@/components/icons";
+import { useInputContext } from "@/context/InputContext";
 
 export const Navbar = () => {
+  const { inputValue, setInputValue } = useInputContext();
+
   const searchInput = (
     <Input
       aria-label="Search"
@@ -45,6 +51,8 @@ export const Navbar = () => {
         <SearchIcon className="text-base text-default-400 pointer-events-none flex-shrink-0" />
       }
       type="search"
+      value={inputValue}
+      onValueChange={(value) => setInputValue(value)}
     />
   );
 

@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation"; 
 import { Card, CardFooter, Image, Button } from "@heroui/react";
 import carSillouette from "@/public/car-silhouette.png";
+import { useInputContext } from "@/context/InputContext";
+
 
 interface carListing {}
 
@@ -11,7 +13,8 @@ export default function Home() {
   const [carListings, setCarListings] = useState([]);
   const [offset, setOffSet] = useState(0);
   const [loading, setLoading] = useState<boolean>(false);
-  const router = useRouter(); // Initialize the router
+  const router = useRouter(); 
+  const {inputValue} = useInputContext();
 
   useEffect(() => {
     const fetchCarListings = async () => {
@@ -59,6 +62,7 @@ export default function Home() {
 
   return (
     <div className="flex flex-col my-4 justify-center items-center">
+      <h1 className="text-3xl font-bold mb-4">Car Listings {inputValue}</h1>
       <section className="flex flex-row flex-wrap items-center justify-center gap-4 py-8 md:py-10">
         {carListings.map((carListing: carListing, index) => (
           <Card
