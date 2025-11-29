@@ -124,13 +124,13 @@ export default function Home() {
   };
 
   return (
-    <div className="flex flex-row w-full min-h-screen relative">
+    <div className="flex flex-col lg:flex-row w-full min-h-screen relative">
       {/* Sidebar */}
       <aside className={`${
         showFilters 
           ? 'w-80 translate-x-0' 
           : '-translate-x-full lg:translate-x-0 lg:w-0 lg:border-r-0'
-      } fixed lg:sticky top-0 left-0 h-screen z-40 transition-all duration-300 ease-in-out overflow-hidden border-r border-default-200 bg-content2 flex-shrink-0`}>
+      } fixed lg:sticky top-16 lg:top-16 left-0  z-10 transition-all duration-300 ease-in-out overflow-hidden border-r border-default-200 bg-content2 flex-shrink-0`}>
         <div className="p-6 h-full overflow-y-auto">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-bold">Filters</h2>
@@ -166,6 +166,7 @@ export default function Home() {
               label="Year"
               type="number"
               placeholder="e.g., 2020"
+              min="1990"
               value={filters.year}
               onChange={(e) => handleFilterChange("year", e.target.value)}
               variant="bordered"
@@ -175,6 +176,7 @@ export default function Home() {
               label="Min Price"
               type="number"
               placeholder="e.g., 10000"
+              min="0"
               value={filters.minPrice}
               onChange={(e) => handleFilterChange("minPrice", e.target.value)}
               variant="bordered"
@@ -184,6 +186,7 @@ export default function Home() {
               label="Max Price"
               type="number"
               placeholder="e.g., 50000"
+              min={filters.minPrice || 0}
               value={filters.maxPrice}
               onChange={(e) => handleFilterChange("maxPrice", e.target.value)}
               variant="bordered"
@@ -193,6 +196,7 @@ export default function Home() {
               label="Min Mileage"
               type="number"
               placeholder="e.g., 0"
+              min="0"
               value={filters.minMileage}
               onChange={(e) => handleFilterChange("minMileage", e.target.value)}
               variant="bordered"
@@ -201,6 +205,7 @@ export default function Home() {
             <Input
               label="Max Mileage"
               type="number"
+              min={filters.minMileage || 0}
               placeholder="e.g., 100000"
               value={filters.maxMileage}
               onChange={(e) => handleFilterChange("maxMileage", e.target.value)}
@@ -226,13 +231,13 @@ export default function Home() {
       {/* Overlay for mobile */}
       {showFilters && (
         <div 
-          className="fixed inset-0 bg-black/50 z-30 lg:hidden"
+          className="fixed inset-0 bg-black/50 z-[5] lg:hidden top-16"
           onClick={() => setShowFilters(false)}
         />
       )}
 
       {/* Main Content */}
-      <div className={`flex-1 flex flex-col items-center my-4 transition-all duration-300 ${
+      <div className={`flex-1 flex flex-col items-center my-4 transition-all duration-300 w-full ${
         showFilters ? 'lg:ml-0' : 'lg:ml-0'
       }`}>
         <div className="w-full flex items-center justify-between mb-4 px-4">
@@ -256,7 +261,7 @@ export default function Home() {
           </Button>
         </div>
        
-        <section className="flex flex-row flex-wrap items-center justify-center gap-4 py-8 md:py-10 w-full px-4">
+        <section className="flex flex-col lg:flex-row lg:flex-wrap items-center justify-center gap-4 py-8 md:py-10 w-full px-4">
         {carListings.map((carListing: carListing, index) => (
           <Card
             isFooterBlurred
