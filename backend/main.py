@@ -25,7 +25,6 @@ DB_PORT = 5432
 JWT_SECRET = "my secret jwt key"
 JWT_ALGORITHM = "HS256"
 
-salt = bcrypt.gensalt()
 class userSignup(BaseModel):
     name: str
     phone: str
@@ -73,45 +72,92 @@ async def get_car_details(car_id: int):
     conn.close()
     return row
 #insert customer 
-@app.post('api/customer/')
+@app.post('/api/customer/')
 async def insert_customer(user: userSignup):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    query = """
-    INSERT INTO CUSTOMER ("NAME", "PHONE", "ADDR", "USERNAME", "PASSWORD")
-    VALUES (%s, %s, %s, %s, %s);
-    """
-    params = (user.name, user.phone, user.addr, user.username, bcrypt.hashpw(user.password.encode('utf-8'), salt))
-    cur.execute(query, params)
-    conn.commit()
-    conn.close()
-    payload = {
-        "username": user.username,
-        "exp": datetime.utcnow() + timedelta(hours=72)
-    }
-    encode_token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
-    return {"message": "Customer inserted successfully", "token": encode_token}
-
-@app.get('/api/customer/{username}/{password}')
-async def get_customer(username: str, password: str):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    query = """
-    SELECT * FROM CUSTOMER WHERE "USERNAME" = %s;
-    """
-    params = (username,)
-    cur.execute(query, params)
-    row = cur.fetchone()
-    conn.close()
-    if row and bcrypt.checkpw(password.encode('utf-8'), row[5].encode('utf-8')):
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Check if username already exists
+        check_query = """
+        SELECT "USERNAME" FROM CUSTOMER WHERE "USERNAME" = %s;
+        """
+        cur.execute(check_query, (user.username,))
+        existing_user = cur.fetchone()
+        
+        if existing_user:
+            cur.close()
+            conn.close()
+            return {"message": "Username already exists", "error": True}
+        
+        # Generate salt and hash password for this specific user
+        salt = bcrypt.gensalt()
+        hashed_password = bcrypt.hashpw(user.password.encode('utf-8'), salt)
+        # Convert bytes to string for PostgreSQL storage
+        hashed_password_str = hashed_password.decode('utf-8')
+        
+        query = """
+        INSERT INTO CUSTOMER ("NAME", "PHONE", "ADDR", "USERNAME", "PASSWORD")
+        VALUES (%s, %s, %s, %s, %s);
+        """
+        params = (user.name, user.phone, user.addr, user.username, hashed_password_str)
+        cur.execute(query, params)
+        conn.commit()
+        cur.close()
+        conn.close()
+        
         payload = {
-            "username": username,
+            "username": user.username,
             "exp": datetime.utcnow() + timedelta(hours=72)
         }
         encode_token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
-        return {"message": "Login successful", "token": encode_token}
-    else:
-        return {"message": "Invalid username or password"}
+        return {"message": "Customer inserted successfully", "token": encode_token}
+    except Exception as e:
+        if conn:
+            conn.rollback()
+            conn.close()
+        return {"message": f"Error creating customer: {str(e)}", "error": True}
+
+@app.get('/api/customer/{username}/{password}')
+async def get_customer(username: str, password: str):
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        query = """
+        SELECT * FROM CUSTOMER WHERE "USERNAME" = %s;
+        """
+        params = (username,)
+        cur.execute(query, params)
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        
+        if row:
+            # Check if password field exists (assuming password is stored as string)
+            stored_password = row[5]  # Assuming PASSWORD is at index 5 (0-indexed)
+            # Handle both bytes and string formats
+            if isinstance(stored_password, bytes):
+                password_to_check = stored_password
+            elif isinstance(stored_password, str):
+                password_to_check = stored_password.encode('utf-8')
+            else:
+                password_to_check = str(stored_password).encode('utf-8')
+                
+            if bcrypt.checkpw(password.encode('utf-8'), password_to_check):
+                payload = {
+                    "username": username,
+                    "exp": datetime.utcnow() + timedelta(hours=72)
+                }
+                encode_token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+                return {"message": "Login successful", "token": encode_token}
+        
+        return {"message": "Invalid username or password", "error": True}
+    except Exception as e:
+        if conn:
+            conn.close()
+        return {"message": f"Error during login: {str(e)}", "error": True}
 #filtering route for car listings
 @app.get("/api/cars")
 async def filter_cars(

@@ -107,20 +107,21 @@ export default function App() {
       }),
     });
     
-    if (!res.ok) {
-      const error = await res.json();
-      setSignupError(error.message);
+    const responseData = await res.json();
+    
+    if (!res.ok || responseData.error) {
+      setSignupError(responseData.message || "Failed to create account");
       setLoading(false);
       return;
     }
-    const responseData = await res.json();
+    
     if (responseData.token) {
       // Save token using context (which also saves to localStorage)
       setToken(responseData.token);
       // Redirect to home page after successful signup
       router.push("/");
     } else {
-      setSignupError("No token received from server");
+      setSignupError(responseData.message || "No token received from server");
     }
     setLoading(false);
   };

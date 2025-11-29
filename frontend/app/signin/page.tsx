@@ -19,26 +19,35 @@ export default function App() {
         setLoading(true);
         let data = Object.fromEntries(new FormData(e.currentTarget));
         console.log("Form data:", data);
-        await fetch("http://localhost:8000/api/customer/" + data.username + "/" + data.password)
-          .then((response) => response.json())
-          .then((responseData) => {
-            console.log("Success:", responseData);
-            // Save token using context (which also saves to localStorage)
-            if (responseData.token) {
-              setToken(responseData.token);
-              // Redirect to home page after successful login
-              router.push("/");
-            } else {
-              console.error("No token received");
-              setAction("error: No token received");
-            }
-          })
-          .catch((error) => {
-            console.error("Error:", error);
-            setAction("error: " + error.message);
-          });
-        setAction(`submit ${JSON.stringify(data)}`);
-        setLoading(false);
+        try {
+          const username = String(data.username);
+          const password = String(data.password);
+          const response = await fetch("http://localhost:8000/api/customer/" + encodeURIComponent(username) + "/" + encodeURIComponent(password));
+          const responseData = await response.json();
+          
+          console.log("Response:", responseData);
+          
+          if (responseData.error) {
+            setAction("error: " + responseData.message);
+            setLoading(false);
+            return;
+          }
+          
+          // Save token using context (which also saves to localStorage)
+          if (responseData.token) {
+            setToken(responseData.token);
+            // Redirect to home page after successful login
+            router.push("/");
+          } else {
+            console.error("No token received");
+            setAction("error: " + (responseData.message || "No token received"));
+          }
+        } catch (error: any) {
+          console.error("Error:", error);
+          setAction("error: " + (error.message || "Network error occurred"));
+        } finally {
+          setLoading(false);
+        }
       }}
     >
       <div>
