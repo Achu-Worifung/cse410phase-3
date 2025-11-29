@@ -123,6 +123,8 @@ async def filter_cars(
     year: int | None = None,
     min_price: int | None = None,
     max_price: int | None = None,
+    min_mileage: int | None = None,
+    max_mileage: int | None = None,
     sort: str | None = None
 ):
     conn = get_db_connection()
@@ -142,7 +144,10 @@ async def filter_cars(
     params = []
 
     if query:
-        sql += ' AND "CAR NAME" ILIKE %s'
+        sql += ' AND "CAR NAME" ILIKE %s OR "MAKE" ILIKE %s OR "MODEL" ILIKE %s OR "YEAR" ILIKE %s '
+        params.append(f"%{query}%")
+        params.append(f"%{query}%")
+        params.append(f"%{query}%")
         params.append(f"%{query}%")
 
     if make:
@@ -164,6 +169,14 @@ async def filter_cars(
     if max_price:
         sql += ' AND "PRICE($)" <= %s'
         params.append(max_price)
+
+    if min_mileage:
+        sql += ' AND "MILEAGE" >= %s'
+        params.append(min_mileage)
+
+    if max_mileage:
+        sql += ' AND "MILEAGE" <= %s'
+        params.append(max_mileage)
 
     # SAFE SORTING (prevent SQL injection)
     allowed_sorts = {
