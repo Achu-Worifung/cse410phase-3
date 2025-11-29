@@ -1,10 +1,14 @@
 "use client";
 import React from "react";
 import { Form, Input, Button } from "@heroui/react";
+import { useTokenContext } from "@/context/TokenContext";
+import { useRouter } from "next/navigation";
 
 export default function App() {
   const [action, setAction] = React.useState<String|null>(null);
   const [loading, setLoading] = React.useState<boolean>(false);
+  const { setToken } = useTokenContext();
+  const router = useRouter();
 
   return (
     <Form
@@ -17,15 +21,21 @@ export default function App() {
         console.log("Form data:", data);
         await fetch("http://localhost:8000/api/customer/" + data.username + "/" + data.password)
           .then((response) => response.json())
-          .then((data) => {
-            console.log("Success:", data);
-            //saving token to local storage
-            if (data.token) {
-              localStorage.setItem("token", data.token);
+          .then((responseData) => {
+            console.log("Success:", responseData);
+            // Save token using context (which also saves to localStorage)
+            if (responseData.token) {
+              setToken(responseData.token);
+              // Redirect to home page after successful login
+              router.push("/");
+            } else {
+              console.error("No token received");
+              setAction("error: No token received");
             }
           })
           .catch((error) => {
             console.error("Error:", error);
+            setAction("error: " + error.message);
           });
         setAction(`submit ${JSON.stringify(data)}`);
         setLoading(false);

@@ -6,6 +6,8 @@ import {
   Checkbox,
   Button,
 } from "@heroui/react";
+import { useTokenContext } from "@/context/TokenContext";
+import { useRouter } from "next/navigation";
 
 interface SignupFormData {
   name: string;
@@ -32,6 +34,8 @@ export default function App() {
   const [errors, setErrors] = React.useState<SignupFormErrors>({});
   const[loading, setLoading] = React.useState<boolean>(false);
   const[signupError, setSignupError] = React.useState<string|null>(null);
+  const { setToken } = useTokenContext();
+  const router = useRouter();
 
   // Real-time password validation
   const getPasswordError = (value: string): string | null => {
@@ -89,7 +93,7 @@ export default function App() {
     // Clear errors and submit
     setErrors({});
     setSubmitted(data);
-    const res = await fetch('http://localhost:8000/api/customer/signup', {
+    const res = await fetch('http://localhost:8000/api/customer/', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -109,10 +113,15 @@ export default function App() {
       setLoading(false);
       return;
     }
-     const token = await res.json();
-      if (token.token) {
-        localStorage.setItem("token", token.token);
-      }
+    const responseData = await res.json();
+    if (responseData.token) {
+      // Save token using context (which also saves to localStorage)
+      setToken(responseData.token);
+      // Redirect to home page after successful signup
+      router.push("/");
+    } else {
+      setSignupError("No token received from server");
+    }
     setLoading(false);
   };
 
