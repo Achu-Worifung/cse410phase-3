@@ -17,7 +17,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-DB_NAME = "cse412" #change to your database name
+DB_NAME = "phase2" #change to your database name
 DB_USER = "postgres"
 DB_PASSWORD = "password"
 DB_HOST = "localhost"
