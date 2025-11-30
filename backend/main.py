@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Header
 import psycopg2 as pg
 import bcrypt
 import jwt 
@@ -31,6 +31,12 @@ class userSignup(BaseModel):
     addr: str | None = None
     username: str
     password: str
+
+class userUpdate(BaseModel):
+    name: str | None = None
+    phone: str | None = None
+    addr: str | None = None
+    username: str | None = None
 def get_db_connection():
     conn = pg.connect(
         dbname=DB_NAME,
@@ -81,7 +87,7 @@ async def insert_customer(user: userSignup):
         
         # Check if username already exists
         check_query = """
-        SELECT "USERNAME" FROM CUSTOMER WHERE "USERNAME" = %s;
+        SELECT username FROM customer WHERE username = %s;
         """
         cur.execute(check_query, (user.username,))
         existing_user = cur.fetchone()
@@ -98,7 +104,7 @@ async def insert_customer(user: userSignup):
         hashed_password_str = hashed_password.decode('utf-8')
         
         query = """
-        INSERT INTO CUSTOMER ("NAME", "PHONE", "ADDR", "USERNAME", "PASSWORD")
+        INSERT INTO customer (full_name, phone_number, addr, username, pass_hash)
         VALUES (%s, %s, %s, %s, %s);
         """
         params = (user.name, user.phone, user.addr, user.username, hashed_password_str)
@@ -119,6 +125,8 @@ async def insert_customer(user: userSignup):
             conn.close()
         return {"message": f"Error creating customer: {str(e)}", "error": True}
 
+
+
 @app.get('/api/customer/{username}/{password}')
 async def get_customer(username: str, password: str):
     conn = None
@@ -126,7 +134,7 @@ async def get_customer(username: str, password: str):
         conn = get_db_connection()
         cur = conn.cursor()
         query = """
-        SELECT * FROM CUSTOMER WHERE "USERNAME" = %s;
+        SELECT * FROM customer WHERE username = %s;
         """
         params = (username,)
         cur.execute(query, params)
@@ -249,3 +257,186 @@ async def filter_cars(
     conn.close()
 
     return rows
+
+# Helper function to decode JWT token
+def decode_jwt_token(token: str):
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        return payload
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token has expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+# Get user information from token
+@app.get('/api/user/me')
+async def get_user_info(authorization: str = Header(None)):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header missing")
+    
+    # Extract token from "Bearer <token>" format
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid authorization format")
+    
+    token = authorization.replace("Bearer ", "")
+    
+    # Decode token to get username
+    payload = decode_jwt_token(token)
+    username = payload.get("username")
+    
+    if not username:
+        raise HTTPException(status_code=401, detail="Username not found in token")
+    
+    # Get user information from database
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        query = """
+        SELECT name, phone, addr, username FROM customer WHERE username = %s;
+        """
+        cur.execute(query, (username,))
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        
+        if not row:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Return user information (excluding password)
+        user_info = {
+            "name": row[0],
+            "phone": row[1],
+            "addr": row[2],
+            "username": row[3]
+        }
+        
+        return {"user": user_info, "message": "User information retrieved successfully"}
+        
+    except Exception as e:
+        if conn:
+            conn.close()
+        raise HTTPException(status_code=500, detail=f"Error retrieving user information: {str(e)}")
+
+# Update user information
+@app.put('/api/user/me')
+async def update_user_info(user_data: userUpdate, authorization: str = Header(None)):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header missing")
+    
+    # Extract token from "Bearer <token>" format
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid authorization format")
+    
+    token = authorization.replace("Bearer ", "")
+    
+    # Decode token to get username
+    payload = decode_jwt_token(token)
+    current_username = payload.get("username")
+    
+    if not current_username:
+        raise HTTPException(status_code=401, detail="Username not found in token")
+    
+    # Check if any data is provided for update
+    update_data = user_data.model_dump(exclude_unset=True)
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No data provided for update")
+    
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # If username is being updated, check if new username already exists
+        if 'username' in update_data and update_data['username'] != current_username:
+            check_query = "SELECT username FROM customer WHERE username = %s;"
+            cur.execute(check_query, (update_data['username'],))
+            existing_user = cur.fetchone()
+            if existing_user:
+                cur.close()
+                conn.close()
+                raise HTTPException(status_code=400, detail="Username already exists")
+        
+        # Build dynamic update query
+        set_clauses = []
+        params = []
+        
+        for field, value in update_data.items():
+            if value is not None:
+                set_clauses.append(f"{field} = %s")
+                params.append(value)
+        
+        if not set_clauses:
+            raise HTTPException(status_code=400, detail="No valid data provided for update")
+        
+        # Add the current username for WHERE clause
+        params.append(current_username)
+        
+        query = f"""
+        UPDATE customer 
+        SET {', '.join(set_clauses)}
+        WHERE username = %s;
+        """
+        
+        cur.execute(query, params)
+        
+        # Check if any row was updated
+        if cur.rowcount == 0:
+            cur.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        conn.commit()
+        
+        # Get updated user information
+        select_query = """
+        SELECT name, phone, addr, username FROM customer WHERE username = %s;
+        """
+        # Use the new username if it was updated, otherwise use current username
+        lookup_username = update_data.get('username', current_username)
+        cur.execute(select_query, (lookup_username,))
+        row = cur.fetchone()
+        
+        cur.close()
+        conn.close()
+        
+        if not row:
+            raise HTTPException(status_code=404, detail="Updated user not found")
+        
+        # Return updated user information
+        updated_user = {
+            "name": row[0],
+            "phone": row[1], 
+            "addr": row[2],
+            "username": row[3]
+        }
+        
+        # If username was changed, generate a new token
+        new_token = None
+        if 'username' in update_data:
+            payload = {
+                "username": updated_user["username"],
+                "exp": datetime.utcnow() + timedelta(hours=72)
+            }
+            new_token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+        
+        response = {
+            "user": updated_user, 
+            "message": "User information updated successfully"
+        }
+        
+        if new_token:
+            response["new_token"] = new_token
+        
+        return response
+        
+    except HTTPException:
+        if conn:
+            conn.rollback()
+            conn.close()
+        raise
+    except Exception as e:
+        if conn:
+            conn.rollback()
+            conn.close()
+        raise HTTPException(status_code=500, detail=f"Error updating user information: {str(e)}")

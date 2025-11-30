@@ -100,7 +100,7 @@ export const Navbar = () => {
           <Button
             as={Link}
             className="text-sm font-normal text-default-600 bg-default-100"
-            href={"/signin"}
+            href={token ? "/profile" : "/signin"}
             startContent={<HeartFilledIcon className="text-danger" />}
             variant="flat"
           >
