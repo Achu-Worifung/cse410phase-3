@@ -1,7 +1,8 @@
 "use client";
 import React from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { useTokenContext } from "@/context/TokenContext";
 import { 
   Card, 
   CardHeader, 
@@ -11,7 +12,14 @@ import {
   Button, 
   Chip, 
   Divider,
-  Spinner 
+  Spinner,
+  Modal,
+  ModalContent,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
+  Input,
+  useDisclosure
 } from "@heroui/react"; 
 
 interface CarData {
@@ -35,9 +43,25 @@ interface CarData {
 
 export default function CarDetail() {
   const params = useParams();
+  const router = useRouter();
   const carId = params.id;
   const [carData, setCarData] = useState<CarData | null>(null);
   const [loading, setLoading] = useState(true);
+  const { setToken, isAuthenticated } = useTokenContext();
+  
+  // Modal states
+  const { isOpen: isLoginOpen, onOpen: onLoginOpen, onOpenChange: onLoginOpenChange } = useDisclosure();
+  const { isOpen: isPurchaseOpen, onOpen: onPurchaseOpen, onOpenChange: onPurchaseOpenChange } = useDisclosure();
+  
+  // Purchase form state
+  const [purchaseData, setPurchaseData] = useState({
+    fullName: '',
+    email: '',
+    phone: '',
+    address: '',
+    paymentMethod: 'financing'
+  });
+  
 
   //fetching car details
   useEffect(() => {
@@ -280,6 +304,13 @@ export default function CarDetail() {
                     color="primary" 
                     size="lg" 
                     className="w-full"
+                    onClick={() => {
+                      if (!isAuthenticated) {
+                        onLoginOpen();
+                      } else {
+                        onPurchaseOpen();
+                      }
+                    }}
                   >
                     Purchase Now
                   </Button>
@@ -338,6 +369,206 @@ export default function CarDetail() {
           </div>
         </div>
       </div>
+      
+      {/* Login Required Modal */}
+      <Modal 
+        isOpen={isLoginOpen} 
+        onOpenChange={onLoginOpenChange}
+        placement="center"
+      >
+        <ModalContent>
+          {(onClose) => (
+            <>
+              <ModalHeader className="flex flex-col gap-1">
+                Login Required
+              </ModalHeader>
+              <ModalBody>
+                <div className="text-center py-4">
+                  <p className="text-gray-600 mb-4">
+                    You need to be logged in to purchase this vehicle.
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    Please sign in to your account or create a new one to continue with your purchase.
+                  </p>
+                </div>
+              </ModalBody>
+              <ModalFooter>
+                <Button 
+                  color="danger" 
+                  variant="light" 
+                  onPress={onClose}
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  color="primary" 
+                  onPress={() => {
+                    router.push('/signin');
+                    onClose();
+                  }}
+                >
+                  Sign In
+                </Button>
+                <Button 
+                  color="secondary" 
+                  variant="bordered"
+                  onPress={() => {
+                    router.push('/signup');
+                    onClose();
+                  }}
+                >
+                  Sign Up
+                </Button>
+              </ModalFooter>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
+
+      {/* Purchase Modal */}
+      <Modal 
+        isOpen={isPurchaseOpen} 
+        onOpenChange={onPurchaseOpenChange}
+        placement="center"
+        size="2xl"
+        scrollBehavior="inside"
+      >
+        <ModalContent>
+          {(onClose) => (
+            <>
+              <ModalHeader className="flex flex-col gap-1">
+                Complete Your Purchase
+              </ModalHeader>
+              <ModalBody>
+                {carData && (
+                  <div className="space-y-6">
+                    {/* Vehicle Summary */}
+                    <Card>
+                      <CardBody>
+                        <div className="flex gap-4">
+                          <Image
+                            src={carData.image}
+                            alt={carData.name}
+                            className="w-24 h-16 object-cover"
+                            radius="md"
+                          />
+                          <div className="flex-1">
+                            <h3 className="font-bold">{carData.name}</h3>
+                            <p className="text-sm text-gray-600">{carData.dealer}</p>
+                            <p className="text-lg font-bold text-blue-600">
+                              ${carData.price.toLocaleString()}
+                            </p>
+                          </div>
+                        </div>
+                      </CardBody>
+                    </Card>
+
+                    {/* Purchase Form */}
+                    <div className="space-y-4">
+                      <h4 className="font-semibold">Contact Information</h4>
+                      
+                      <Input
+                        label="Full Name"
+                        placeholder="Enter your full name"
+                        value={purchaseData.fullName}
+                        onChange={(e) => setPurchaseData({...purchaseData, fullName: e.target.value})}
+                        required
+                      />
+                      
+                      <Input
+                        label="Email"
+                        placeholder="Enter your email"
+                        type="email"
+                        value={purchaseData.email}
+                        onChange={(e) => setPurchaseData({...purchaseData, email: e.target.value})}
+                        required
+                      />
+                      
+                      <Input
+                        label="Phone Number"
+                        placeholder="Enter your phone number"
+                        type="tel"
+                        value={purchaseData.phone}
+                        onChange={(e) => setPurchaseData({...purchaseData, phone: e.target.value})}
+                        required
+                      />
+                      
+                      <Input
+                        label="Address"
+                        placeholder="Enter your address"
+                        value={purchaseData.address}
+                        onChange={(e) => setPurchaseData({...purchaseData, address: e.target.value})}
+                        required
+                      />
+                    </div>
+
+                    {/* Payment Method */}
+                    <div className="space-y-4">
+                      <h4 className="font-semibold">Payment Method</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <Button
+                          variant={purchaseData.paymentMethod === 'financing' ? 'solid' : 'bordered'}
+                          color={purchaseData.paymentMethod === 'financing' ? 'primary' : 'default'}
+                          onClick={() => setPurchaseData({...purchaseData, paymentMethod: 'financing'})}
+                          className="h-auto p-4 flex flex-col items-start"
+                        >
+                          <span className="font-medium">Financing</span>
+                          <span className="text-sm text-gray-600">
+                            ${carData.monthlyPayment}/mo
+                          </span>
+                        </Button>
+                        
+                        <Button
+                          variant={purchaseData.paymentMethod === 'cash' ? 'solid' : 'bordered'}
+                          color={purchaseData.paymentMethod === 'cash' ? 'primary' : 'default'}
+                          onClick={() => setPurchaseData({...purchaseData, paymentMethod: 'cash'})}
+                          className="h-auto p-4 flex flex-col items-start"
+                        >
+                          <span className="font-medium">Cash Payment</span>
+                          <span className="text-sm text-gray-600">
+                            ${carData.price.toLocaleString()}
+                          </span>
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Terms */}
+                    <div className="text-xs text-gray-500 space-y-2">
+                      <p>
+                        By clicking "Complete Purchase", you agree to our Terms of Service and Privacy Policy.
+                      </p>
+                      <p>
+                        This purchase is subject to vehicle availability and final credit approval.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </ModalBody>
+              <ModalFooter>
+                <Button 
+                  color="danger" 
+                  variant="light" 
+                  onPress={onClose}
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  color="primary"
+                  onPress={() => {
+                    // Handle purchase logic here
+                    console.log('Purchase data:', purchaseData);
+                    alert('Purchase request submitted! Our team will contact you shortly.');
+                    onClose();
+                  }}
+                  isDisabled={!purchaseData.fullName || !purchaseData.email || !purchaseData.phone || !purchaseData.address}
+                >
+                  Complete Purchase
+                </Button>
+              </ModalFooter>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
     </div>
   );
 }

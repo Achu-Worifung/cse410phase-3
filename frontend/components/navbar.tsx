@@ -18,6 +18,8 @@ import { link as linkStyles } from "@heroui/theme";
 import NextLink from "next/link";
 import clsx from "clsx";
 
+import { useTokenContext } from "@/context/TokenContext";
+
 import { siteConfig } from "@/config/site";
 import { ThemeSwitch } from "@/components/theme-switch";
 import {
@@ -32,6 +34,8 @@ import { useInputContext } from "@/context/InputContext";
 
 export const Navbar = () => {
   const { inputValue, setInputValue } = useInputContext();
+  const[username, setUsername] = React.useState<string|null>(null);
+  const { token, username: tokenUsername } = useTokenContext();
 
   const searchInput = (
     <Input
@@ -55,6 +59,7 @@ export const Navbar = () => {
       onValueChange={(value) => setInputValue(value)}
     />
   );
+    
 
   return (
     <HeroUINavbar maxWidth="xl" position="sticky">
@@ -99,7 +104,7 @@ export const Navbar = () => {
             startContent={<HeartFilledIcon className="text-danger" />}
             variant="flat"
           >
-            Login
+            {tokenUsername ? `Welcome, ${tokenUsername}` : "Login"}
           </Button>
         </NavbarItem>
       </NavbarContent>

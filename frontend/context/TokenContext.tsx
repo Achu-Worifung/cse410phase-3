@@ -8,6 +8,7 @@ interface TokenContextType {
   setToken: (token: string | null) => void;
   clearToken: () => void;
   isAuthenticated: boolean;
+  username: string | null;
 }
 
 // Create the context
@@ -39,6 +40,29 @@ export const TokenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
+  // Function to decode JWT token and extract username
+  const getUsernameFromToken = (token: string): string | null => {
+    try {
+      // JWT tokens have 3 parts separated by dots: header.payload.signature
+      const parts = token.split('.');
+      if (parts.length !== 3) return null;
+      
+      // Decode the payload (second part)
+      const payload = parts[1];
+      // Add padding if needed for base64 decoding
+      const paddedPayload = payload + '='.repeat((4 - payload.length % 4) % 4);
+      const decodedPayload = atob(paddedPayload);
+      const parsedPayload = JSON.parse(decodedPayload);
+      
+      return parsedPayload.username || null;
+    } catch (error) {
+      console.error('Error decoding token:', error);
+      return null;
+    }
+  };
+
+  const username = token ? getUsernameFromToken(token) : null;
+
   // Function to clear token
   const clearToken = () => {
     setToken(null);
@@ -47,7 +71,7 @@ export const TokenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const isAuthenticated = !!token;
 
   return (
-    <TokenContext.Provider value={{ token, setToken, clearToken, isAuthenticated }}>
+    <TokenContext.Provider value={{ token, setToken, clearToken, isAuthenticated, username }}>
       {children}
     </TokenContext.Provider>
   );
