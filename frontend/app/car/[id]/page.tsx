@@ -3,14 +3,14 @@ import React from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useTokenContext } from "@/context/TokenContext";
-import { 
-  Card, 
-  CardHeader, 
-  CardBody, 
-  CardFooter, 
-  Image, 
-  Button, 
-  Chip, 
+import {
+  Card,
+  CardHeader,
+  CardBody,
+  CardFooter,
+  Image,
+  Button,
+  Chip,
   Divider,
   Spinner,
   Modal,
@@ -19,8 +19,8 @@ import {
   ModalBody,
   ModalFooter,
   Input,
-  useDisclosure
-} from "@heroui/react"; 
+  useDisclosure,
+} from "@heroui/react";
 
 interface CarData {
   id: number;
@@ -47,21 +47,45 @@ export default function CarDetail() {
   const carId = params.id;
   const [carData, setCarData] = useState<CarData | null>(null);
   const [loading, setLoading] = useState(true);
-  const { setToken, isAuthenticated } = useTokenContext();
-  
+  const { isAuthenticated, token } = useTokenContext();
+
   // Modal states
-  const { isOpen: isLoginOpen, onOpen: onLoginOpen, onOpenChange: onLoginOpenChange } = useDisclosure();
-  const { isOpen: isPurchaseOpen, onOpen: onPurchaseOpen, onOpenChange: onPurchaseOpenChange } = useDisclosure();
-  
+  const {
+    isOpen: isLoginOpen,
+    onOpen: onLoginOpen,
+    onOpenChange: onLoginOpenChange,
+  } = useDisclosure();
+  const {
+    isOpen: isPurchaseOpen,
+    onOpen: onPurchaseOpen,
+    onOpenChange: onPurchaseOpenChange,
+  } = useDisclosure();
+
+  const {
+    isOpen: isSuccessOpen,
+    onOpen: onSuccessOpen,
+    onOpenChange: onSuccessOpenChange,
+  } = useDisclosure();
+
+  const {
+    isOpen: isErrorOpen,
+    onOpen: onErrorOpen,
+    onOpenChange: onErrorOpenChange,
+  } = useDisclosure();
+
   // Purchase form state
   const [purchaseData, setPurchaseData] = useState({
-    fullName: '',
-    email: '',
-    phone: '',
-    address: '',
-    paymentMethod: 'financing'
+    fullName: "",
+    email: "",
+    phone: "",
+    address: "",
+    paymentMethod: "financing",
   });
-  
+
+  // Purchase state
+  const [purchaseLoading, setPurchaseLoading] = useState(false);
+  const [purchaseError, setPurchaseError] = useState<string | null>(null);
+  const [purchaseSuccess, setPurchaseSuccess] = useState<any>(null);
 
   //fetching car details
   useEffect(() => {
@@ -87,9 +111,9 @@ export default function CarDetail() {
           listPrice: data[12],
           featured: data[13],
           accentColor: data[14],
-          createdAt: data[17]
+          createdAt: data[17],
         };
-        
+
         setCarData(mappedData);
       } catch (error) {
         console.error("Error fetching car details:", error);
@@ -99,6 +123,44 @@ export default function CarDetail() {
     };
     fetchCarDetails();
   }, [carId]);
+
+  // Function to handle purchase
+  const handlePurchase = async () => {
+    if (!carData || !token) return;
+
+    setPurchaseLoading(true);
+    setPurchaseError(null);
+
+    try {
+      const response = await fetch('http://localhost:8000/api/purchase', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          car_id: carData.id,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || 'Purchase failed');
+      }
+
+      // Success
+      setPurchaseSuccess(data);
+      onPurchaseOpenChange();
+      onSuccessOpen();
+    } catch (error) {
+      setPurchaseError(error instanceof Error ? error.message : 'Purchase failed');
+      onPurchaseOpenChange();
+      onErrorOpen();
+    } finally {
+      setPurchaseLoading(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -113,8 +175,12 @@ export default function CarDetail() {
       <div className="min-h-screen flex items-center justify-center">
         <Card className="max-w-md">
           <CardBody className="text-center py-8">
-            <h1 className="text-2xl font-bold text-gray-800 mb-2">Car not found</h1>
-            <p className="text-gray-600">The requested vehicle could not be loaded.</p>
+            <h1 className="text-2xl font-bold text-gray-800 mb-2">
+              Car not found
+            </h1>
+            <p className="">
+              The requested vehicle could not be loaded.
+            </p>
           </CardBody>
         </Card>
       </div>
@@ -124,7 +190,6 @@ export default function CarDetail() {
   return (
     <div className="min-h-screen bg-gradient-to-br  py-8">
       <div className="max-w-6xl mx-auto px-4">
-        
         {/* Header Card */}
         <Card className="mb-6">
           <CardHeader className="pb-2">
@@ -138,7 +203,7 @@ export default function CarDetail() {
                     </Chip>
                   )}
                 </div>
-                <p className="text-gray-600">{carData.dealer}</p>
+                <p className="">{carData.dealer}</p>
               </div>
               <div className="text-right">
                 <div className="text-3xl font-bold text-blue-600">
@@ -149,7 +214,7 @@ export default function CarDetail() {
                     ${carData.listPrice.toLocaleString()}
                   </div>
                 )}
-                <div className="text-sm text-gray-600">
+                <div className="text-sm ">
                   Est. ${carData.monthlyPayment}/mo
                 </div>
               </div>
@@ -158,10 +223,8 @@ export default function CarDetail() {
         </Card>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
           {/* Left Column - Image and Details */}
           <div className="lg:col-span-2 space-y-6">
-            
             {/* Car Image */}
             <Card>
               <CardBody className="p-0">
@@ -181,31 +244,34 @@ export default function CarDetail() {
               </CardHeader>
               <CardBody>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  
                   <div className="space-y-3">
                     <div className="flex justify-between">
-                      <span className="text-gray-600">Condition:</span>
-                      <Chip 
-                        color={carData.condition === 'New' ? 'success' : 'primary'} 
-                        variant="flat" 
+                      <span className="">Condition:</span>
+                      <Chip
+                        color={
+                          carData.condition === "New" ? "success" : "primary"
+                        }
+                        variant="flat"
                         size="sm"
                       >
                         {carData.condition}
                       </Chip>
                     </div>
-                    
+
                     <div className="flex justify-between">
-                      <span className="text-gray-600">Mileage:</span>
-                      <span className="font-medium">{carData.mileage} miles</span>
+                      <span className="">Mileage:</span>
+                      <span className="font-medium">
+                        {carData.mileage} miles
+                      </span>
                     </div>
-                    
+
                     <div className="flex justify-between">
-                      <span className="text-gray-600">Category:</span>
+                      <span className="">Category:</span>
                       <span className="font-medium">{carData.category}</span>
                     </div>
-                    
+
                     <div className="flex justify-between">
-                      <span className="text-gray-600">Rating:</span>
+                      <span className="">Rating:</span>
                       <div className="flex items-center gap-1">
                         <span className="font-medium">{carData.rating}</span>
                         <span className="text-yellow-500">★</span>
@@ -215,29 +281,30 @@ export default function CarDetail() {
 
                   <div className="space-y-3">
                     <div className="flex justify-between">
-                      <span className="text-gray-600">Color:</span>
+                      <span className="">Color:</span>
                       <div className="flex items-center gap-2">
-                        <div 
-                          className="w-4 h-4 rounded-full border border-gray-300" 
+                        <div
+                          className="w-4 h-4 rounded-full border border-gray-300"
                           style={{ backgroundColor: carData.accentColor }}
                         ></div>
                         <span className="font-medium">{carData.color}</span>
                       </div>
                     </div>
-                    
+
                     <div className="flex justify-between">
-                      <span className="text-gray-600">VIN:</span>
-                      <span className="font-mono text-sm">{carData.vin.slice(-8)}</span>
+                      <span className="">VIN:</span>
+                      <span className="font-mono text-sm">
+                        {carData.vin.slice(-8)}
+                      </span>
                     </div>
-                    
+
                     <div className="flex justify-between">
-                      <span className="text-gray-600">Listed:</span>
+                      <span className="">Listed:</span>
                       <span className="font-medium text-sm">
                         {new Date(carData.createdAt).toLocaleDateString()}
                       </span>
                     </div>
                   </div>
-
                 </div>
               </CardBody>
             </Card>
@@ -250,36 +317,43 @@ export default function CarDetail() {
               <CardBody>
                 <div className="space-y-3">
                   <div className="flex justify-between items-center">
-                    <span className="text-gray-600">List Price:</span>
-                    <span className={carData.listPrice !== carData.price ? 'line-through text-gray-500' : 'font-bold'}>
+                    <span className="">List Price:</span>
+                    <span
+                      className={
+                        carData.listPrice !== carData.price
+                          ? "line-through text-gray-500"
+                          : "font-bold"
+                      }
+                    >
                       ${carData.listPrice.toLocaleString()}
                     </span>
                   </div>
-                  
+
                   {carData.listPrice !== carData.price && (
                     <div className="flex justify-between items-center">
-                      <span className="text-gray-600">Sale Price:</span>
+                      <span className="">Sale Price:</span>
                       <span className="font-bold text-green-600">
                         ${carData.price.toLocaleString()}
                       </span>
                     </div>
                   )}
-                  
+
                   {carData.listPrice !== carData.price && (
                     <>
                       <Divider />
                       <div className="flex justify-between items-center text-green-600">
                         <span className="font-medium">You Save:</span>
                         <span className="font-bold">
-                          ${(carData.listPrice - carData.price).toLocaleString()}
+                          $
+                          {(carData.listPrice - carData.price).toLocaleString()}
                         </span>
                       </div>
                     </>
                   )}
-                  
+
                   <Divider />
                   <div className="flex justify-between items-center">
-                    <span className="text-gray-600">Est. Monthly Payment:</span>
+                    <span className="">Est. Monthly Payment:</span>
                     <span className="font-bold text-blue-600">
                       ${carData.monthlyPayment}/mo
                     </span>
@@ -287,12 +361,10 @@ export default function CarDetail() {
                 </div>
               </CardBody>
             </Card>
-
           </div>
 
           {/* Right Column - Action Panel */}
           <div className="space-y-6">
-            
             {/* Purchase Actions */}
             <Card className="">
               <CardHeader>
@@ -300,9 +372,9 @@ export default function CarDetail() {
               </CardHeader>
               <CardBody>
                 <div className="space-y-3">
-                  <Button 
-                    color="primary" 
-                    size="lg" 
+                  <Button
+                    color="primary"
+                    size="lg"
                     className="w-full"
                     onClick={() => {
                       if (!isAuthenticated) {
@@ -314,27 +386,19 @@ export default function CarDetail() {
                   >
                     Purchase Now
                   </Button>
-                  
-                  <Button 
-                    variant="bordered" 
-                    size="lg" 
-                    className="w-full"
-                  >
+
+                  <Button variant="bordered" size="lg" className="w-full">
                     Schedule Test Drive
                   </Button>
-                  
-                  <Button 
-                    variant="light" 
-                    size="lg" 
-                    className="w-full"
-                  >
+
+                  <Button variant="light" size="lg" className="w-full">
                     Get Financing Quote
                   </Button>
                 </div>
               </CardBody>
-              
+
               <CardFooter>
-                <div className="w-full text-center text-sm text-gray-600">
+                <div className="w-full text-center text-sm ">
                   <p>Need help? Call our sales team</p>
                   <p className="font-medium">(555) 123-4567</p>
                 </div>
@@ -349,30 +413,35 @@ export default function CarDetail() {
               <CardBody>
                 <div className="space-y-3">
                   <div className="text-center p-3  rounded-lg">
-                    <div className="text-2xl font-bold text-blue-600">{carData.rating}</div>
-                    <div className="text-sm text-gray-600">Customer Rating</div>
+                    <div className="text-2xl font-bold text-blue-600">
+                      {carData.rating}
+                    </div>
+                    <div className="text-sm ">Customer Rating</div>
                   </div>
-                  
+
                   <div className="text-center p-3 rounded-lg">
-                    <div className="text-2xl font-bold text-green-600">{carData.condition}</div>
-                    <div className="text-sm text-gray-600">Condition</div>
+                    <div className="text-2xl font-bold text-green-600">
+                      {carData.condition}
+                    </div>
+                    <div className="text-sm ">Condition</div>
                   </div>
-                  
+
                   <div className="text-center p-3  rounded-lg">
-                    <div className="text-2xl font-bold text-purple-600">{carData.category}</div>
-                    <div className="text-sm text-gray-600">Vehicle Type</div>
+                    <div className="text-2xl font-bold text-purple-600">
+                      {carData.category}
+                    </div>
+                    <div className="text-sm ">Vehicle Type</div>
                   </div>
                 </div>
               </CardBody>
             </Card>
-
           </div>
         </div>
       </div>
-      
+
       {/* Login Required Modal */}
-      <Modal 
-        isOpen={isLoginOpen} 
+      <Modal
+        isOpen={isLoginOpen}
         onOpenChange={onLoginOpenChange}
         placement="center"
       >
@@ -384,36 +453,33 @@ export default function CarDetail() {
               </ModalHeader>
               <ModalBody>
                 <div className="text-center py-4">
-                  <p className="text-gray-600 mb-4">
+                  <p className=" mb-4">
                     You need to be logged in to purchase this vehicle.
                   </p>
                   <p className="text-sm text-gray-500">
-                    Please sign in to your account or create a new one to continue with your purchase.
+                    Please sign in to your account or create a new one to
+                    continue with your purchase.
                   </p>
                 </div>
               </ModalBody>
               <ModalFooter>
-                <Button 
-                  color="danger" 
-                  variant="light" 
-                  onPress={onClose}
-                >
+                <Button color="danger" variant="light" onPress={onClose}>
                   Cancel
                 </Button>
-                <Button 
-                  color="primary" 
+                <Button
+                  color="primary"
                   onPress={() => {
-                    router.push('/signin');
+                    router.push("/signin");
                     onClose();
                   }}
                 >
                   Sign In
                 </Button>
-                <Button 
-                  color="secondary" 
+                <Button
+                  color="secondary"
                   variant="bordered"
                   onPress={() => {
-                    router.push('/signup');
+                    router.push("/signup");
                     onClose();
                   }}
                 >
@@ -426,8 +492,8 @@ export default function CarDetail() {
       </Modal>
 
       {/* Purchase Modal */}
-      <Modal 
-        isOpen={isPurchaseOpen} 
+      <Modal
+        isOpen={isPurchaseOpen}
         onOpenChange={onPurchaseOpenChange}
         placement="center"
         size="2xl"
@@ -454,7 +520,9 @@ export default function CarDetail() {
                           />
                           <div className="flex-1">
                             <h3 className="font-bold">{carData.name}</h3>
-                            <p className="text-sm text-gray-600">{carData.dealer}</p>
+                            <p className="text-sm ">
+                              {carData.dealer}
+                            </p>
                             <p className="text-lg font-bold text-blue-600">
                               ${carData.price.toLocaleString()}
                             </p>
@@ -464,68 +532,116 @@ export default function CarDetail() {
                     </Card>
 
                     {/* Purchase Form */}
-                    <div className="space-y-4">
-                      <h4 className="font-semibold">Contact Information</h4>
-                      
-                      <Input
-                        label="Full Name"
-                        placeholder="Enter your full name"
-                        value={purchaseData.fullName}
-                        onChange={(e) => setPurchaseData({...purchaseData, fullName: e.target.value})}
-                        required
-                      />
-                      
-                      <Input
-                        label="Email"
-                        placeholder="Enter your email"
-                        type="email"
-                        value={purchaseData.email}
-                        onChange={(e) => setPurchaseData({...purchaseData, email: e.target.value})}
-                        required
-                      />
-                      
-                      <Input
-                        label="Phone Number"
-                        placeholder="Enter your phone number"
-                        type="tel"
-                        value={purchaseData.phone}
-                        onChange={(e) => setPurchaseData({...purchaseData, phone: e.target.value})}
-                        required
-                      />
-                      
-                      <Input
-                        label="Address"
-                        placeholder="Enter your address"
-                        value={purchaseData.address}
-                        onChange={(e) => setPurchaseData({...purchaseData, address: e.target.value})}
-                        required
-                      />
-                    </div>
+                    {!isAuthenticated && (
+                      <div className="space-y-4">
+                        <h4 className="font-semibold">Contact Information</h4>
+
+                        <Input
+                          label="Full Name"
+                          placeholder="Enter your full name"
+                          value={purchaseData.fullName}
+                          onChange={(e) =>
+                            setPurchaseData({
+                              ...purchaseData,
+                              fullName: e.target.value,
+                            })
+                          }
+                          required
+                        />
+
+                        <Input
+                          label="Email"
+                          placeholder="Enter your email"
+                          type="email"
+                          value={purchaseData.email}
+                          onChange={(e) =>
+                            setPurchaseData({
+                              ...purchaseData,
+                              email: e.target.value,
+                            })
+                          }
+                          required
+                        />
+
+                        <Input
+                          label="Phone Number"
+                          placeholder="Enter your phone number"
+                          type="tel"
+                          value={purchaseData.phone}
+                          onChange={(e) =>
+                            setPurchaseData({
+                              ...purchaseData,
+                              phone: e.target.value,
+                            })
+                          }
+                          required
+                        />
+
+                        <Input
+                          label="Address"
+                          placeholder="Enter your address"
+                          value={purchaseData.address}
+                          onChange={(e) =>
+                            setPurchaseData({
+                              ...purchaseData,
+                              address: e.target.value,
+                            })
+                          }
+                          required
+                        />
+                      </div>
+                    )}
 
                     {/* Payment Method */}
                     <div className="space-y-4">
                       <h4 className="font-semibold">Payment Method</h4>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <Button
-                          variant={purchaseData.paymentMethod === 'financing' ? 'solid' : 'bordered'}
-                          color={purchaseData.paymentMethod === 'financing' ? 'primary' : 'default'}
-                          onClick={() => setPurchaseData({...purchaseData, paymentMethod: 'financing'})}
+                          variant={
+                            purchaseData.paymentMethod === "financing"
+                              ? "solid"
+                              : "bordered"
+                          }
+                          color={
+                            purchaseData.paymentMethod === "financing"
+                              ? "primary"
+                              : "default"
+                          }
+                          onClick={() =>
+                            setPurchaseData({
+                              ...purchaseData,
+                              paymentMethod: "financing",
+                            })
+                          }
                           className="h-auto p-4 flex flex-col items-start"
                         >
                           <span className="font-medium">Financing</span>
-                          <span className="text-sm text-gray-600">
+                          <span className="text-sm ">
                             ${carData.monthlyPayment}/mo
                           </span>
                         </Button>
-                        
+
                         <Button
-                          variant={purchaseData.paymentMethod === 'cash' ? 'solid' : 'bordered'}
-                          color={purchaseData.paymentMethod === 'cash' ? 'primary' : 'default'}
-                          onClick={() => setPurchaseData({...purchaseData, paymentMethod: 'cash'})}
+                          variant={
+                            purchaseData.paymentMethod === "cash"
+                              ? "solid"
+                              : "bordered"
+                          }
+                          color={
+                            purchaseData.paymentMethod === "cash"
+                              ? "primary"
+                              : "default"
+                          }
+                          onClick={() =>
+                            setPurchaseData({
+                              ...purchaseData,
+                              paymentMethod: "cash",
+                            })
+                          }
                           className="h-auto p-4 flex flex-col items-start"
                         >
                           <span className="font-medium">Cash Payment</span>
-                          <span className="text-sm text-gray-600">
+                          <span className="text-sm ">
                             ${carData.price.toLocaleString()}
                           </span>
                         </Button>
@@ -535,34 +651,151 @@ export default function CarDetail() {
                     {/* Terms */}
                     <div className="text-xs text-gray-500 space-y-2">
                       <p>
-                        By clicking "Complete Purchase", you agree to our Terms of Service and Privacy Policy.
+                        By clicking "Complete Purchase", you agree to our Terms
+                        of Service and Privacy Policy.
                       </p>
                       <p>
-                        This purchase is subject to vehicle availability and final credit approval.
+                        This purchase is subject to vehicle availability and
+                        final credit approval.
                       </p>
                     </div>
                   </div>
                 )}
               </ModalBody>
               <ModalFooter>
-                <Button 
-                  color="danger" 
-                  variant="light" 
-                  onPress={onClose}
-                >
+                <Button color="danger" variant="light" onPress={onClose}>
                   Cancel
                 </Button>
-                <Button 
+                <Button
+                  color="primary"
+                  onPress={() => handlePurchase()}
+                  isLoading={purchaseLoading}
+                  isDisabled={purchaseLoading}
+                >
+                  {purchaseLoading ? "Processing..." : "Complete Purchase"}
+                </Button>
+              </ModalFooter>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
+
+      {/* Success Modal */}
+      <Modal
+        isOpen={isSuccessOpen}
+        onOpenChange={onSuccessOpenChange}
+        placement="center"
+        isDismissable={false}
+        hideCloseButton
+      >
+        <ModalContent>
+          {(onClose) => (
+            <>
+              <ModalHeader className="flex flex-col gap-1 text-center">
+                <div className="text-green-600 text-2xl mb-2">✅</div>
+                Purchase Successful!
+              </ModalHeader>
+              <ModalBody>
+                <div className="text-center space-y-4">
+                  {purchaseSuccess && (
+                    <>
+                      <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
+                        <h4 className="font-semibold text-green-800 dark:text-green-200 mb-2">
+                          Purchase Details
+                        </h4>
+                        <div className="space-y-2 text-sm">
+                          <p><strong>Car:</strong> {purchaseSuccess.purchase?.car_name}</p>
+                          <p><strong>Price:</strong> ${purchaseSuccess.purchase?.car_price?.toLocaleString()}</p>
+                          <p><strong>Purchase ID:</strong> {purchaseSuccess.purchase?.car_id}</p>
+                          <p><strong>Date:</strong> {new Date(purchaseSuccess.purchased_at).toLocaleDateString()}</p>
+                        </div>
+                      </div>
+                      <p className="text-gray-600 dark:text-gray-300">
+                        Congratulations! Your vehicle purchase has been completed successfully. 
+                        Our team will contact you shortly with next steps for delivery and documentation.
+                      </p>
+                    </>
+                  )}
+                </div>
+              </ModalBody>
+              <ModalFooter className="justify-center">
+                <Button
+                  color="success"
+                  onPress={() => {
+                    onClose();
+                    router.push('/profile'); // Redirect to profile to see purchase
+                  }}
+                >
+                  View My Purchases
+                </Button>
+                <Button
+                  color="primary"
+                  variant="bordered"
+                  onPress={() => {
+                    onClose();
+                    router.push('/'); // Go back to home/listings
+                  }}
+                >
+                  Continue Shopping
+                </Button>
+              </ModalFooter>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
+
+      {/* Error Modal */}
+      <Modal
+        isOpen={isErrorOpen}
+        onOpenChange={onErrorOpenChange}
+        placement="center"
+      >
+        <ModalContent>
+          {(onClose) => (
+            <>
+              <ModalHeader className="flex flex-col gap-1 text-center">
+                <div className="text-red-600 text-2xl mb-2">❌</div>
+                Purchase Failed
+              </ModalHeader>
+              <ModalBody>
+                <div className="text-center space-y-4">
+                  <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg">
+                    <p className="text-red-800 dark:text-red-200">
+                      {purchaseError || "An unexpected error occurred during the purchase process."}
+                    </p>
+                  </div>
+                  <div className="space-y-2 text-sm text-gray-600 dark:text-gray-300">
+                    <p>Common reasons for purchase failure:</p>
+                    <ul className="list-disc list-inside space-y-1 text-left">
+                      <li>Vehicle is no longer available</li>
+                      <li>Authentication token has expired</li>
+                      <li>Network connection issues</li>
+                      <li>Vehicle has already been purchased by another customer</li>
+                    </ul>
+                  </div>
+                  <p className="text-sm text-gray-500">
+                    Please try again or contact our support team for assistance.
+                  </p>
+                </div>
+              </ModalBody>
+              <ModalFooter>
+                <Button
+                  color="danger"
+                  variant="light"
+                  onPress={onClose}
+                >
+                  Close
+                </Button>
+                <Button
                   color="primary"
                   onPress={() => {
-                    // Handle purchase logic here
-                    console.log('Purchase data:', purchaseData);
-                    alert('Purchase request submitted! Our team will contact you shortly.');
                     onClose();
+                    // Reset error state and reopen purchase modal
+                    setPurchaseError(null);
+                    onPurchaseOpen();
                   }}
-                  isDisabled={!purchaseData.fullName || !purchaseData.email || !purchaseData.phone || !purchaseData.address}
                 >
-                  Complete Purchase
+                  Try Again
                 </Button>
               </ModalFooter>
             </>
