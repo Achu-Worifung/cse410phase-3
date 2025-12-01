@@ -195,13 +195,13 @@ async def filter_cars(
             "PRICE($)" AS price, 
             "MILEAGE"
         FROM CAR
-        WHERE 1 = 1
+        WHERE "IS_AVAIL" = TRUE
     """
 
     params = []
 
     if query:
-        sql += ' AND "CAR NAME" ILIKE %s OR "MAKE" ILIKE %s OR "MODEL" ILIKE %s OR "YEAR" ILIKE %s '
+        sql += ' AND ("CAR NAME" ILIKE %s OR "MAKE" ILIKE %s OR "MODEL" ILIKE %s OR "YEAR"::text ILIKE %s) '
         params.append(f"%{query}%")
         params.append(f"%{query}%")
         params.append(f"%{query}%")
