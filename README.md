@@ -251,7 +251,7 @@ npm run lint:fix            # Fix ESLint errors
 - Success/error feedback
 - Intuitive navigation
 
-## 🔧 Troubleshooting
+## Troubleshooting
 
 ### Common Issues
 
@@ -273,20 +273,6 @@ npm run lint:fix            # Fix ESLint errors
 ### Database Setup
 Make sure your PostgreSQL database has the required tables with proper column names and data types as expected by the API.
 
-## Browser Support
-
-- Chrome (latest)
-- Firefox (latest)
-- Safari (latest)
-- Edge (latest)
-
-## Contributing
-
-1. Follow TypeScript best practices
-2. Maintain component isolation
-3. Add proper error handling
-4. Update documentation for new features
-5. Test on multiple screen sizes
 
 ## License
 
