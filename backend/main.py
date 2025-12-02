@@ -52,35 +52,8 @@ def get_db_connection():
 @app.get("/")
 async def read_root():
     return {"message": "Hello World"}
-
-# @app.get('/api/cars')
-# async def get_cars():
-#     conn = get_db_connection()
-#     cur = conn.cursor()
-#     query = """
-#     SELECT "CAR_ID", "CAR NAME" AS NAME, "IMAGE", "PRICE($)" AS PRICE, "MILEAGE"
-#     FROM CAR
-#     WHERE "IS_AVAIL" = TRUE
-#     LIMIT 250;
-#     """
-#     cur.execute(query)
-#     rows = cur.fetchall()
-#     conn.close()
-#     return rows
-
-@app.get('/api/car/{car_id}')
-async def get_car_details(car_id: int):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    query = """
-    SELECT * FROM CAR WHERE "CAR_ID" = %s;
-    """
-    params = (int(car_id),)
-    cur.execute(query, params)
-    row = cur.fetchone()
-    conn.close()
-    return row
-#insert customer 
+# ------------------INSERT OPERATIONS BELOW------------------
+#creating a new customer 
 @app.post('/api/customer/')
 async def insert_customer(user: userSignup):
     conn = None
@@ -127,6 +100,433 @@ async def insert_customer(user: userSignup):
             conn.rollback()
             conn.close()
         return {"message": f"Error creating customer: {str(e)}", "error": True}
+    
+# Create a new purchase
+@app.post('/api/purchase')
+async def create_purchase(purchase_data: purchaseRequest, authorization: str = Header(None)):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header missing")
+    
+    # Extract token from "Bearer <token>" format
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid authorization format")
+    
+    token = authorization.replace("Bearer ", "")
+    
+    # Decode token to get username
+    payload = decode_jwt_token(token)
+    username = payload.get("username")
+    
+    if not username:
+        raise HTTPException(status_code=401, detail="Username not found in token")
+    
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Get customer ID from username
+        cust_query = "SELECT cust_id FROM customer WHERE username = %s;"
+        cur.execute(cust_query, (username,))
+        cust_row = cur.fetchone()
+        
+        if not cust_row:
+            cur.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="Customer not found")
+        
+        cust_id = cust_row[0]
+        
+        # Check if car exists and is available
+        car_query = """
+        SELECT "CAR_ID", "CAR NAME", "PRICE($)", "IS_AVAIL" 
+        FROM car WHERE "CAR_ID" = %s;
+        """
+        cur.execute(car_query, (purchase_data.car_id,))
+        car_row = cur.fetchone()
+        
+        if not car_row:
+            cur.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="Car not found")
+        
+        if not car_row[3]:  # IS_AVAIL column
+            cur.close()
+            conn.close()
+            raise HTTPException(status_code=400, detail="Car is not available for purchase")
+        
+        # Check if car is already purchased (primary key constraint on car_id)
+        existing_purchase_query = "SELECT car_id FROM purchase WHERE car_id = %s;"
+        cur.execute(existing_purchase_query, (purchase_data.car_id,))
+        existing_purchase = cur.fetchone()
+        
+        if existing_purchase:
+            cur.close()
+            conn.close()
+            raise HTTPException(status_code=400, detail="Car has already been purchased")
+        
+        # Insert the purchase
+        purchase_query = """
+        INSERT INTO purchase (cust_id, car_id)
+        VALUES (%s, %s);
+        """
+        cur.execute(purchase_query, (cust_id, purchase_data.car_id))
+        
+        # Update car availability
+        update_car_query = """
+        UPDATE car SET "IS_AVAIL" = FALSE WHERE "CAR_ID" = %s;
+        """
+        cur.execute(update_car_query, (purchase_data.car_id,))
+        
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        return {
+            "message": "Purchase created successfully",
+            "purchase": {
+                "cust_id": cust_id,
+                "car_id": purchase_data.car_id,
+                "car_name": car_row[1],
+                "car_price": car_row[2]
+            },
+            "purchased_at": datetime.utcnow().isoformat()
+        }
+        
+    except HTTPException:
+        if conn:
+            conn.rollback()
+            conn.close()
+        raise
+    except Exception as e:
+        if conn:
+            conn.rollback()
+            conn.close()
+        raise HTTPException(status_code=500, detail=f"Error creating purchase: {str(e)}")
+
+    
+    
+# ------------------UPDATE OPERATIONS BELOW ------------------
+# Update user information
+@app.put('/api/user/me')
+async def update_user_info(user_data: userUpdate, authorization: str = Header(None)):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header missing")
+    
+    # Extract token from "Bearer <token>" format
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid authorization format")
+    
+    token = authorization.replace("Bearer ", "")
+    
+    # Decode token to get username
+    payload = decode_jwt_token(token)
+    current_username = payload.get("username")
+    
+    if not current_username:
+        raise HTTPException(status_code=401, detail="Username not found in token")
+    
+    # Check if any data is provided for update
+    update_data = user_data.model_dump(exclude_unset=True)
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No data provided for update")
+    
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # If username is being updated, check if new username already exists
+        if 'username' in update_data and update_data['username'] != current_username:
+            check_query = "SELECT username FROM customer WHERE username = %s;"
+            cur.execute(check_query, (update_data['username'],))
+            existing_user = cur.fetchone()
+            if existing_user:
+                cur.close()
+                conn.close()
+                raise HTTPException(status_code=400, detail="Username already exists")
+        
+        # Build dynamic update query with proper column mapping
+        set_clauses = []
+        params = []
+        
+        # Map frontend field names to database column names
+        field_mapping = {
+            'name': 'full_name',
+            'phone': 'phone_number',
+            'addr': 'addr',
+            'username': 'username'
+        }
+        
+        for field, value in update_data.items():
+            if value is not None:
+                db_column = field_mapping.get(field, field)
+                set_clauses.append(f"{db_column} = %s")
+                params.append(value)
+        
+        if not set_clauses:
+            raise HTTPException(status_code=400, detail="No valid data provided for update")
+        
+        # Add the current username for WHERE clause
+        params.append(current_username)
+        
+        query = f"""
+        UPDATE customer 
+        SET {', '.join(set_clauses)}
+        WHERE username = %s;
+        """
+        
+        cur.execute(query, params)
+        
+        # Check if any row was updated
+        if cur.rowcount == 0:
+            cur.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        conn.commit()
+        
+        # Get updated user information
+        select_query = """
+        SELECT full_name, phone_number, addr, username FROM customer WHERE username = %s;
+        """
+        # Use the new username if it was updated, otherwise use current username
+        lookup_username = update_data.get('username', current_username)
+        cur.execute(select_query, (lookup_username,))
+        row = cur.fetchone()
+        
+        cur.close()
+        conn.close()
+        
+        if not row:
+            raise HTTPException(status_code=404, detail="Updated user not found")
+        
+        # Return updated user information
+        updated_user = {
+            "name": row[0],
+            "phone": row[1], 
+            "addr": row[2],
+            "username": row[3]
+        }
+        
+        # If username was changed, generate a new token
+        new_token = None
+        if 'username' in update_data:
+            payload = {
+                "username": updated_user["username"],
+                "exp": datetime.utcnow() + timedelta(hours=72)
+            }
+            new_token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+        
+        response = {
+            "user": updated_user, 
+            "message": "User information updated successfully"
+        }
+        
+        if new_token:
+            response["new_token"] = new_token
+        
+        return response
+        
+    except HTTPException:
+        if conn:
+            conn.rollback()
+            conn.close()
+        raise
+    except Exception as e:
+        if conn:
+            conn.rollback()
+            conn.close()
+        raise HTTPException(status_code=500, detail=f"Error updating user information: {str(e)}")
+    
+    
+# ------------------DELETE OPERATIONS BELOW ------------------
+
+# Delete user account
+@app.delete('/api/user/me')
+async def delete_user_account(authorization: str = Header(None)):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header missing")
+    
+    # Extract token from "Bearer <token>" format
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid authorization format")
+    
+    token = authorization.replace("Bearer ", "")
+    
+    # Decode token to get username
+    payload = decode_jwt_token(token)
+    username = payload.get("username")
+    
+    if not username:
+        raise HTTPException(status_code=401, detail="Username not found in token")
+    
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Get customer ID and check if user exists
+        check_query = "SELECT cust_id FROM customer WHERE username = %s;"
+        cur.execute(check_query, (username,))
+        user_row = cur.fetchone()
+        
+        if not user_row:
+            cur.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        cust_id = user_row[0]
+        
+        # Check if user has any purchases
+        purchase_check_query = "SELECT car_id FROM purchase WHERE cust_id = %s;"
+        cur.execute(purchase_check_query, (cust_id,))
+        purchases = cur.fetchall()
+        
+        # If user has purchases, make those cars available again
+        if purchases:
+            for purchase in purchases:
+                car_id = purchase[0]
+                # Update car availability back to true
+                update_car_query = 'UPDATE car SET "IS_AVAIL" = TRUE WHERE "CAR_ID" = %s;'
+                cur.execute(update_car_query, (car_id,))
+            
+            # Delete all purchase records for this customer
+            delete_purchases_query = "DELETE FROM purchase WHERE cust_id = %s;"
+            cur.execute(delete_purchases_query, (cust_id,))
+        
+        # Delete the customer account
+        delete_customer_query = "DELETE FROM customer WHERE cust_id = %s;"
+        cur.execute(delete_customer_query, (cust_id,))
+        
+        # Check if customer was actually deleted
+        if cur.rowcount == 0:
+            cur.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="User not found or already deleted")
+        
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        return {
+            "message": "User account deleted successfully",
+            "details": {
+                "deleted_customer": username,
+                "purchases_removed": len(purchases) if purchases else 0,
+                "cars_made_available": len(purchases) if purchases else 0
+            }
+        }
+        
+    except HTTPException:
+        if conn:
+            conn.rollback()
+            conn.close()
+        raise
+    except Exception as e:
+        if conn:
+            conn.rollback()
+            conn.close()
+        raise HTTPException(status_code=500, detail=f"Error deleting user account: {str(e)}")
+
+# Delete a specific purchase (cancel purchase)
+@app.delete('/api/purchase/{car_id}')
+async def delete_purchase(car_id: int, authorization: str = Header(None)):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header missing")
+    
+    # Extract token from "Bearer <token>" format
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid authorization format")
+    
+    token = authorization.replace("Bearer ", "")
+    
+    # Decode token to get username
+    payload = decode_jwt_token(token)
+    username = payload.get("username")
+    
+    if not username:
+        raise HTTPException(status_code=401, detail="Username not found in token")
+    
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Get customer ID
+        cust_query = "SELECT cust_id FROM customer WHERE username = %s;"
+        cur.execute(cust_query, (username,))
+        cust_row = cur.fetchone()
+        
+        if not cust_row:
+            cur.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="Customer not found")
+        
+        cust_id = cust_row[0]
+        
+        # Check if this customer has purchased this car
+        purchase_check_query = "SELECT car_id FROM purchase WHERE cust_id = %s AND car_id = %s;"
+        cur.execute(purchase_check_query, (cust_id, car_id))
+        purchase_row = cur.fetchone()
+        
+        if not purchase_row:
+            cur.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="Purchase not found or you don't own this car")
+        
+        # Delete the purchase record
+        delete_purchase_query = "DELETE FROM purchase WHERE cust_id = %s AND car_id = %s;"
+        cur.execute(delete_purchase_query, (cust_id, car_id))
+        
+        # Make the car available again
+        update_car_query = 'UPDATE car SET "IS_AVAIL" = TRUE WHERE "CAR_ID" = %s;'
+        cur.execute(update_car_query, (car_id,))
+        
+        # Get car details for response
+        car_details_query = 'SELECT "CAR NAME", "PRICE($)" FROM car WHERE "CAR_ID" = %s;'
+        cur.execute(car_details_query, (car_id,))
+        car_details = cur.fetchone()
+        
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        return {
+            "message": "Purchase cancelled successfully",
+            "details": {
+                "car_id": car_id,
+                "car_name": car_details[0] if car_details else "Unknown",
+                "car_price": car_details[1] if car_details else "Unknown",
+                "refund_status": "Car made available for purchase again"
+            }
+        }
+        
+    except HTTPException:
+        if conn:
+            conn.rollback()
+            conn.close()
+        raise
+    except Exception as e:
+        if conn:
+            conn.rollback()
+            conn.close()
+        raise HTTPException(status_code=500, detail=f"Error cancelling purchase: {str(e)}")
+
+
+@app.get('/api/car/{car_id}')
+async def get_car_details(car_id: int):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    query = """
+    SELECT * FROM CAR WHERE "CAR_ID" = %s;
+    """
+    params = (int(car_id),)
+    cur.execute(query, params)
+    row = cur.fetchone()
+    conn.close()
+    return row
+
 
 
 
@@ -343,302 +743,5 @@ async def get_user_info(authorization: str = Header(None)):
             conn.close()
         raise HTTPException(status_code=500, detail=f"Error retrieving user information: {str(e)}")
 
-# Update user information
-@app.put('/api/user/me')
-async def update_user_info(user_data: userUpdate, authorization: str = Header(None)):
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Authorization header missing")
-    
-    # Extract token from "Bearer <token>" format
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Invalid authorization format")
-    
-    token = authorization.replace("Bearer ", "")
-    
-    # Decode token to get username
-    payload = decode_jwt_token(token)
-    current_username = payload.get("username")
-    
-    if not current_username:
-        raise HTTPException(status_code=401, detail="Username not found in token")
-    
-    # Check if any data is provided for update
-    update_data = user_data.model_dump(exclude_unset=True)
-    if not update_data:
-        raise HTTPException(status_code=400, detail="No data provided for update")
-    
-    conn = None
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        
-        # If username is being updated, check if new username already exists
-        if 'username' in update_data and update_data['username'] != current_username:
-            check_query = "SELECT username FROM customer WHERE username = %s;"
-            cur.execute(check_query, (update_data['username'],))
-            existing_user = cur.fetchone()
-            if existing_user:
-                cur.close()
-                conn.close()
-                raise HTTPException(status_code=400, detail="Username already exists")
-        
-        # Build dynamic update query with proper column mapping
-        set_clauses = []
-        params = []
-        
-        # Map frontend field names to database column names
-        field_mapping = {
-            'name': 'full_name',
-            'phone': 'phone_number',
-            'addr': 'addr',
-            'username': 'username'
-        }
-        
-        for field, value in update_data.items():
-            if value is not None:
-                db_column = field_mapping.get(field, field)
-                set_clauses.append(f"{db_column} = %s")
-                params.append(value)
-        
-        if not set_clauses:
-            raise HTTPException(status_code=400, detail="No valid data provided for update")
-        
-        # Add the current username for WHERE clause
-        params.append(current_username)
-        
-        query = f"""
-        UPDATE customer 
-        SET {', '.join(set_clauses)}
-        WHERE username = %s;
-        """
-        
-        cur.execute(query, params)
-        
-        # Check if any row was updated
-        if cur.rowcount == 0:
-            cur.close()
-            conn.close()
-            raise HTTPException(status_code=404, detail="User not found")
-        
-        conn.commit()
-        
-        # Get updated user information
-        select_query = """
-        SELECT full_name, phone_number, addr, username FROM customer WHERE username = %s;
-        """
-        # Use the new username if it was updated, otherwise use current username
-        lookup_username = update_data.get('username', current_username)
-        cur.execute(select_query, (lookup_username,))
-        row = cur.fetchone()
-        
-        cur.close()
-        conn.close()
-        
-        if not row:
-            raise HTTPException(status_code=404, detail="Updated user not found")
-        
-        # Return updated user information
-        updated_user = {
-            "name": row[0],
-            "phone": row[1], 
-            "addr": row[2],
-            "username": row[3]
-        }
-        
-        # If username was changed, generate a new token
-        new_token = None
-        if 'username' in update_data:
-            payload = {
-                "username": updated_user["username"],
-                "exp": datetime.utcnow() + timedelta(hours=72)
-            }
-            new_token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
-        
-        response = {
-            "user": updated_user, 
-            "message": "User information updated successfully"
-        }
-        
-        if new_token:
-            response["new_token"] = new_token
-        
-        return response
-        
-    except HTTPException:
-        if conn:
-            conn.rollback()
-            conn.close()
-        raise
-    except Exception as e:
-        if conn:
-            conn.rollback()
-            conn.close()
-        raise HTTPException(status_code=500, detail=f"Error updating user information: {str(e)}")
 
-# Delete user account
-@app.delete('/api/user/me')
-async def delete_user_account(authorization: str = Header(None)):
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Authorization header missing")
-    
-    # Extract token from "Bearer <token>" format
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Invalid authorization format")
-    
-    token = authorization.replace("Bearer ", "")
-    
-    # Decode token to get username
-    payload = decode_jwt_token(token)
-    username = payload.get("username")
-    
-    if not username:
-        raise HTTPException(status_code=401, detail="Username not found in token")
-    
-    conn = None
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        
-        # Check if user exists before deletion
-        check_query = "SELECT username FROM customer WHERE username = %s;"
-        cur.execute(check_query, (username,))
-        user_exists = cur.fetchone()
-        
-        if not user_exists:
-            cur.close()
-            conn.close()
-            raise HTTPException(status_code=404, detail="User not found")
-        
-        # Delete the user account
-        delete_query = "DELETE FROM customer WHERE username = %s;"
-        cur.execute(delete_query, (username,))
-        
-        # Check if any row was deleted
-        if cur.rowcount == 0:
-            cur.close()
-            conn.close()
-            raise HTTPException(status_code=404, detail="User not found")
-        
-        conn.commit()
-        cur.close()
-        conn.close()
-        
-        return {
-            "message": "Account deleted successfully",
-            "username": username,
-            "deleted_at": datetime.utcnow().isoformat()
-        }
-        
-    except HTTPException:
-        if conn:
-            conn.rollback()
-            conn.close()
-        raise
-    except Exception as e:
-        if conn:
-            conn.rollback()
-            conn.close()
-        raise HTTPException(status_code=500, detail=f"Error deleting user account: {str(e)}")
 
-# Create a new purchase
-@app.post('/api/purchase')
-async def create_purchase(purchase_data: purchaseRequest, authorization: str = Header(None)):
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Authorization header missing")
-    
-    # Extract token from "Bearer <token>" format
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Invalid authorization format")
-    
-    token = authorization.replace("Bearer ", "")
-    
-    # Decode token to get username
-    payload = decode_jwt_token(token)
-    username = payload.get("username")
-    
-    if not username:
-        raise HTTPException(status_code=401, detail="Username not found in token")
-    
-    conn = None
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        
-        # Get customer ID from username
-        cust_query = "SELECT cust_id FROM customer WHERE username = %s;"
-        cur.execute(cust_query, (username,))
-        cust_row = cur.fetchone()
-        
-        if not cust_row:
-            cur.close()
-            conn.close()
-            raise HTTPException(status_code=404, detail="Customer not found")
-        
-        cust_id = cust_row[0]
-        
-        # Check if car exists and is available
-        car_query = """
-        SELECT "CAR_ID", "CAR NAME", "PRICE($)", "IS_AVAIL" 
-        FROM car WHERE "CAR_ID" = %s;
-        """
-        cur.execute(car_query, (purchase_data.car_id,))
-        car_row = cur.fetchone()
-        
-        if not car_row:
-            cur.close()
-            conn.close()
-            raise HTTPException(status_code=404, detail="Car not found")
-        
-        if not car_row[3]:  # IS_AVAIL column
-            cur.close()
-            conn.close()
-            raise HTTPException(status_code=400, detail="Car is not available for purchase")
-        
-        # Check if car is already purchased (primary key constraint on car_id)
-        existing_purchase_query = "SELECT car_id FROM purchase WHERE car_id = %s;"
-        cur.execute(existing_purchase_query, (purchase_data.car_id,))
-        existing_purchase = cur.fetchone()
-        
-        if existing_purchase:
-            cur.close()
-            conn.close()
-            raise HTTPException(status_code=400, detail="Car has already been purchased")
-        
-        # Insert the purchase
-        purchase_query = """
-        INSERT INTO purchase (cust_id, car_id)
-        VALUES (%s, %s);
-        """
-        cur.execute(purchase_query, (cust_id, purchase_data.car_id))
-        
-        # Update car availability
-        update_car_query = """
-        UPDATE car SET "IS_AVAIL" = FALSE WHERE "CAR_ID" = %s;
-        """
-        cur.execute(update_car_query, (purchase_data.car_id,))
-        
-        conn.commit()
-        cur.close()
-        conn.close()
-        
-        return {
-            "message": "Purchase created successfully",
-            "purchase": {
-                "cust_id": cust_id,
-                "car_id": purchase_data.car_id,
-                "car_name": car_row[1],
-                "car_price": car_row[2]
-            },
-            "purchased_at": datetime.utcnow().isoformat()
-        }
-        
-    except HTTPException:
-        if conn:
-            conn.rollback()
-            conn.close()
-        raise
-    except Exception as e:
-        if conn:
-            conn.rollback()
-            conn.close()
-        raise HTTPException(status_code=500, detail=f"Error creating purchase: {str(e)}")
